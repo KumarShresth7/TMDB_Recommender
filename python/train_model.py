@@ -1,107 +1,164 @@
 import pandas as pd
 import numpy as np
-from scipy.sparse.linalg import svds 
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
 import pickle
+import ast
 
+# Load and preprocess data
 movies = pd.read_csv('data/tmdb_5000_movies.csv')
 cred = pd.read_csv('data/tmdb_5000_credits.csv')
 
-movies = movies.merge(cred,on='title')
-movies = movies[['movie_id','title','overview','genres','keywords','cast','crew']]
-
-import ast
-def convert(text):
-    L = []
-    for i in ast.literal_eval(text):
-        L.append(i['name'])
-    return L
-
+movies = movies.merge(cred, on='title')
+movies = movies[['movie_id', 'title', 'overview', 'genres', 'keywords', 'cast', 'crew']]
 movies.dropna(inplace=True)
+
+# Helper functions for preprocessing
+def convert(text):
+    return [i['name'] for i in ast.literal_eval(text)]
+
+def convert3(text):
+    return [i['name'] for i in ast.literal_eval(text)[:3]]
+
+def fetch_director(text):
+    return [i['name'] for i in ast.literal_eval(text) if i['job'] == 'Director']
+
 movies['genres'] = movies['genres'].apply(convert)
 movies['keywords'] = movies['keywords'].apply(convert)
-
-#for getting top3 actors name only 
-def convert3(text):
-    L = []
-    counter = 0
-    for i in ast.literal_eval(text):
-        if counter<3:
-            L.append(i['name'])
-        counter+=1
-    return L
-
 movies['cast'] = movies['cast'].apply(convert3)
-
-#for getting director
-def fetch_director(text):
-    L = []
-    for i in ast.literal_eval(text):
-        if i['job'] == 'Director':
-            L.append(i['name'])
-    return L 
-
 movies['crew'] = movies['crew'].apply(fetch_director)
-movies['overview'] = movies['overview'].apply(lambda x:x.split())
-movies['genres'] = movies['genres'].apply(lambda x:[i.replace(" ","") for i in x])
-movies['keywords'] = movies['keywords'].apply(lambda x:[i.replace(" ","") for i in x])
-movies['cast'] = movies['cast'].apply(lambda x:[i.replace(" ","") for i in x])
-movies['crew'] = movies['crew'].apply(lambda x:[i.replace(" ","") for i in x])
+
+# Process text fields for tags
+for col in ['overview', 'genres', 'keywords', 'cast', 'crew']:
+    movies[col] = movies[col].apply(lambda x: [i.replace(" ", "") for i in x])
+
 movies['tags'] = movies['overview'] + movies['genres'] + movies['keywords'] + movies['cast'] + movies['crew']
+new_df = movies[['movie_id', 'title', 'tags']]
+new_df['tags'] = new_df['tags'].apply(lambda x: " ".join(x).lower())
 
-new_df = movies[['movie_id','title','tags']]
-new_df['tags'] = new_df['tags'].apply(lambda x:" ".join(x))
-new_df['tags'] = new_df['tags'].apply(lambda x:x.lower())
-# print(new_df['tags'].head())
+# Save DataFrame for consistency
+pickle.dump(new_df, open('model/movies.pkl', 'wb'))
 
-#Data Preprocessing done upto here
-
-#Vectorization begins from this point
-from sklearn.feature_extraction.text import CountVectorizer
-cv = CountVectorizer(max_features=5000,stop_words='english')
+# Vectorization and similarity computation
+cv = CountVectorizer(max_features=5000, stop_words='english')
 vector = cv.fit_transform(new_df['tags']).toarray()
-# print(vector)
-
-from sklearn.metrics.pairwise import cosine_similarity
 similarity = cosine_similarity(vector)
 
-def recommend(movie):
-    movie_index = new_df[new_df['title']==movie].index[0]
-    distances = similarity[movie_index]
-    movies_list = sorted(list(enumerate(distances)),reverse=True,key = lambda x: x[1])[1:6]
-    
-    for i in movies_list:
-        print(new_df.iloc[i[0]].title)
+# Save CountVectorizer and similarity matrix
+pickle.dump(cv, open('model/count_vectorizer.pkl', 'wb'))
+pickle.dump(similarity, open('model/similarity.pkl', 'wb'))
 
+# Recommendation function using CountVectorizer
+def recommend(movie):
+    try:
+        movie_index = new_df[new_df['title'] == movie].index[0]
+        distances = similarity[movie_index]
+        movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
+        return [new_df.iloc[i[0]].title for i in movies_list]
+    except IndexError:
+        return ["Movie not found."]
 print(recommend('Avatar'))
 
-#create pickle model
-pickle.dump(new_df,open('model/movies.pkl','wb'))
+# TF-IDF Vectorization
+tfidf = TfidfVectorizer(max_features=5000, stop_words='english')
+tfidf_matrix = tfidf.fit_transform(new_df['tags']).toarray()
+tfidf_similarity = cosine_similarity(tfidf_matrix)
 
-pickle.dump(new_df.to_dict(),open('model/movie_dict.pkl','wb'))
-pickle.dump(similarity,open('model/similarity.pkl','wb'))
-    
-        
+# Save TF-IDF vectorizer and matrix
+pickle.dump(tfidf, open('model/tfidf_vectorizer.pkl', 'wb'))
+pickle.dump(tfidf_similarity, open('model/tfidf_similarity.pkl', 'wb'))
 
+# TF-IDF Recommendation function
+def recommend_tfidf(movie):
+    try:
+        movie_index = new_df[new_df['title'] == movie].index[0]
+        distances = tfidf_similarity[movie_index]
+        movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
+        return [new_df.iloc[i[0]].title for i in movies_list]
+    except IndexError:
+        return ["Movie not found."]
+print(recommend_tfidf('Avatar'))
 
+# K-Means clustering with saved vector space
+kmeans = KMeans(n_clusters=20, random_state=42)
+new_df['cluster'] = kmeans.fit_predict(tfidf_matrix)
 
+# Save KMeans model
+pickle.dump(kmeans, open('model/kmeans_model.pkl', 'wb'))
 
+def recommend_kmeans(movie):
+    try:
+        movie_index = new_df[new_df['title'] == movie].index[0]
+        movie_cluster = new_df.iloc[movie_index]['cluster']
+        similar_movies = new_df[new_df['cluster'] == movie_cluster].sort_values('title')
+        recommendations = similar_movies['title'].tolist()
+        if movie in recommendations:
+            recommendations.remove(movie)
+        return recommendations[:5]
+    except IndexError:
+        return ["Movie not found."]
+print(recommend_kmeans('Avatar'))
 
-        
+# Evaluation
+def evaluate_model(recommend_func, test_movies):
+    precision_scores, recall_scores, diversity_scores = [], [], []
 
+    def calculate_diversity(recommendations):
+        return len(set(recommendations)) / len(recommendations) if recommendations else 0
 
+    for movie in test_movies:
+        recommended = recommend_func(movie)
+        if not recommended:
+            continue
+        relevance = set(recommended[:3])  # Assume top-3 are relevant
+        precision = len(relevance) / len(recommended) if recommended else 0
+        recall = len(relevance) / 3  # Total assumed relevant is 3
+        diversity = calculate_diversity(recommended)
 
+        precision_scores.append(precision)
+        recall_scores.append(recall)
+        diversity_scores.append(diversity)
 
+    return {
+        "Precision": np.mean(precision_scores),
+        "Recall": np.mean(recall_scores),
+        "Diversity": np.mean(diversity_scores)
+    }
 
+# Test and visualize results
+test_movies = ['Avatar', 'Titanic', 'The Dark Knight', 'Inception', 'Interstellar']
+content_results = evaluate_model(recommend, test_movies)
+tfidf_results = evaluate_model(recommend_tfidf, test_movies)
+kmeans_results = evaluate_model(recommend_kmeans, test_movies)
 
+models = ['Content-Based', 'TF-IDF', 'K-Means']
+precisions = [content_results['Precision'], tfidf_results['Precision'], kmeans_results['Precision']]
+recalls = [content_results['Recall'], tfidf_results['Recall'], kmeans_results['Recall']]
+diversities = [content_results['Diversity'], tfidf_results['Diversity'], kmeans_results['Diversity']]
 
+x = np.arange(len(models))
+width = 0.25
 
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.bar(x - width, precisions, width, label='Precision')
+ax.bar(x, recalls, width, label='Recall')
+ax.bar(x + width, diversities, width, label='Diversity')
 
+ax.set_ylabel('Scores')
+ax.set_title('Comparison of Models')
+ax.set_xticks(x)
+ax.set_xticklabels(models)
+ax.legend()
 
+plt.tight_layout()
+plt.show()
 
-
-
-
-
-
-
-
+# K-Means cluster visualization
+plt.figure(figsize=(10, 6))
+plt.hist(new_df['cluster'], bins=20, color='skyblue', edgecolor='black')
+plt.title('Cluster Distribution in K-Means')
+plt.xlabel('Cluster')
+plt.ylabel('Number of Movies')
+plt.show()
