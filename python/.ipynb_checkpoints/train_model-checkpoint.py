@@ -34,12 +34,12 @@ movies['crew'] = movies['crew'].apply(fetch_director)
 for col in ['overview', 'genres', 'keywords', 'cast', 'crew']:
     movies[col] = movies[col].apply(lambda x: [i.replace(" ", "") for i in x])
 
-movies['tags'] =  movies['genres'] + movies['keywords'] + movies['cast'] + movies['crew']
+movies['tags'] = movies['overview'] + movies['genres'] + movies['keywords'] + movies['cast'] + movies['crew']
 new_df = movies[['movie_id', 'title', 'tags']]
 new_df['tags'] = new_df['tags'].apply(lambda x: " ".join(x).lower())
 
 # Save DataFrame for consistency
-# pickle.dump(new_df, open('model/movies.pkl', 'wb'))
+pickle.dump(new_df, open('model/movies.pkl', 'wb'))
 
 # Vectorization and similarity computation
 cv = CountVectorizer(max_features=5000, stop_words='english')
@@ -47,8 +47,8 @@ vector = cv.fit_transform(new_df['tags']).toarray()
 similarity = cosine_similarity(vector)
 
 # Save CountVectorizer and similarity matrix
-# pickle.dump(cv, open('model/count_vectorizer.pkl', 'wb'))
-# pickle.dump(similarity, open('model/similarity.pkl', 'wb'))
+pickle.dump(cv, open('model/count_vectorizer.pkl', 'wb'))
+pickle.dump(similarity, open('model/similarity.pkl', 'wb'))
 
 # Recommendation function using CountVectorizer
 def recommend(movie):
@@ -68,8 +68,8 @@ tfidf_matrix = tfidf.fit_transform(new_df['tags']).toarray()
 tfidf_similarity = cosine_similarity(tfidf_matrix)
 
 # Save TF-IDF vectorizer and matrix
-# pickle.dump(tfidf, open('model/tfidf_vectorizer.pkl', 'wb'))
-# pickle.dump(tfidf_similarity, open('model/tfidf_similarity.pkl', 'wb'))
+pickle.dump(tfidf, open('model/tfidf_vectorizer.pkl', 'wb'))
+pickle.dump(tfidf_similarity, open('model/tfidf_similarity.pkl', 'wb'))
 
 # TF-IDF Recommendation function
 def recommend_tfidf(movie):
@@ -84,16 +84,11 @@ print("Movie Recommendation using TF-IDF Model: ")
 print(recommend_tfidf('Avatar'))
 
 # K-Means clustering with saved vector space
-from sklearn.decomposition import PCA
-
-# Apply PCA before clustering (reduce dimensions)
-pca = PCA(n_components=50)
-reduced_matrix = pca.fit_transform(tfidf_matrix)
 kmeans = KMeans(n_clusters=20, random_state=42)
-new_df['cluster'] = kmeans.fit_predict(reduced_matrix)
+new_df['cluster'] = kmeans.fit_predict(tfidf_matrix)
 
 # Save KMeans model
-# pickle.dump(kmeans, open('model/kmeans_model.pkl', 'wb'))
+pickle.dump(kmeans, open('model/kmeans_model.pkl', 'wb'))
 
 def recommend_kmeans(movie):
     try:
@@ -136,40 +131,15 @@ def evaluate_model(recommend_func, test_movies):
     }
 
 # Test and visualize results
-# Test movies
-test_movies = ['The Conjuring', 'Man of Steel', '12 Rounds', 'Inception', 'Steamboy']
-
-# Evaluate each model
+test_movies = ['Avatar', 'Titanic', '12 Rounds', 'Inception', 'Interstellar']
 content_results = evaluate_model(recommend, test_movies)
 tfidf_results = evaluate_model(recommend_tfidf, test_movies)
 kmeans_results = evaluate_model(recommend_kmeans, test_movies)
 
-# Print evaluation results
-print("Content-Based Model Results:")
-print(content_results)
-print("\nTF-IDF Model Results:")
-print(tfidf_results)
-print("\nK-Means Model Results:")
-print(kmeans_results)
-
-# Comparison logic
 models = ['Content-Based', 'TF-IDF', 'K-Means']
 precisions = [content_results['Precision'], tfidf_results['Precision'], kmeans_results['Precision']]
 recalls = [content_results['Recall'], tfidf_results['Recall'], kmeans_results['Recall']]
 diversities = [content_results['Diversity'], tfidf_results['Diversity'], kmeans_results['Diversity']]
-best_model_idx = {
-    'Precision': precisions.index(max(precisions)),
-    'Recall': recalls.index(max(recalls)),
-    'Diversity': diversities.index(max(diversities)),
-}
-
-print("\nBest Model Based on Evaluation:")
-for metric, values in zip(["Precision", "Recall", "Diversity"], [precisions, recalls, diversities]):
-    max_score = max(values)
-    idx = values.index(max_score)
-    print(f"Best for {metric}: {models[idx]} (Score: {max_score:.2f})")
-
-
 
 x = np.arange(len(models))
 width = 0.25
@@ -188,6 +158,7 @@ ax.legend()
 plt.tight_layout()
 plt.show()
 
+# K-Means cluster visualization
 plt.figure(figsize=(10, 6))
 plt.hist(new_df['cluster'], bins=20, color='skyblue', edgecolor='black')
 plt.title('Cluster Distribution in K-Means')
@@ -198,16 +169,12 @@ plt.show()
 import seaborn as sns
 
 # Generate a heatmap for a subset of similarity matrix (first 20 movies)
-subset_similarity = similarity[:20, :20] 
+subset_similarity = similarity[:20, :20]  # Adjust the subset size as needed
 plt.figure(figsize=(12, 8))
 sns.heatmap(subset_similarity, annot=True, fmt=".2f", cmap="coolwarm", xticklabels=new_df['title'][:20], yticklabels=new_df['title'][:20])
 plt.title("Heatmap of Cosine Similarity (Subset)")
 plt.xticks(rotation=45)
 plt.show()
-
-
-
-
 
 
 
