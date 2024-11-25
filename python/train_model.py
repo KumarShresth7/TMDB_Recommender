@@ -59,6 +59,7 @@ def recommend(movie):
         return [new_df.iloc[i[0]].title for i in movies_list]
     except IndexError:
         return ["Movie not found."]
+print("Movie Recommendation using Content-Based Model: ")
 print(recommend('Avatar'))
 
 # TF-IDF Vectorization
@@ -79,6 +80,7 @@ def recommend_tfidf(movie):
         return [new_df.iloc[i[0]].title for i in movies_list]
     except IndexError:
         return ["Movie not found."]
+print("Movie Recommendation using TF-IDF Model: ")
 print(recommend_tfidf('Avatar'))
 
 # K-Means clustering with saved vector space
@@ -99,6 +101,7 @@ def recommend_kmeans(movie):
         return recommendations[:5]
     except IndexError:
         return ["Movie not found."]
+print("Movie Recommendation using KMeans Model: ")
 print(recommend_kmeans('Avatar'))
 
 # Evaluation
@@ -128,7 +131,7 @@ def evaluate_model(recommend_func, test_movies):
     }
 
 # Test and visualize results
-test_movies = ['Avatar', 'Titanic', 'The Dark Knight', 'Inception', 'Interstellar']
+test_movies = ['Avatar', 'Titanic', '12 Rounds', 'Inception', 'Interstellar']
 content_results = evaluate_model(recommend, test_movies)
 tfidf_results = evaluate_model(recommend_tfidf, test_movies)
 kmeans_results = evaluate_model(recommend_kmeans, test_movies)
@@ -162,3 +165,17 @@ plt.title('Cluster Distribution in K-Means')
 plt.xlabel('Cluster')
 plt.ylabel('Number of Movies')
 plt.show()
+
+import seaborn as sns
+
+# Generate a heatmap for a subset of similarity matrix (first 20 movies)
+subset_similarity = similarity[:20, :20]  # Adjust the subset size as needed
+plt.figure(figsize=(12, 8))
+sns.heatmap(subset_similarity, annot=True, fmt=".2f", cmap="coolwarm", xticklabels=new_df['title'][:20], yticklabels=new_df['title'][:20])
+plt.title("Heatmap of Cosine Similarity (Subset)")
+plt.xticks(rotation=45)
+plt.show()
+
+
+
+

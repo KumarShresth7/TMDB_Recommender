@@ -14,17 +14,28 @@ kmeans_model = pickle.load(open('model/kmeans_model.pkl', 'rb'))  # Load the pre
 
 def recommend(movie, model_type):
     movie_index = movies[movies['title'] == movie].index[0]
+    recommended_movies = []
+    recommended_movies_posters = []
+    recommended_movie_trailers = []  # List to store trailer links
 
     if model_type == "Content-Based":
         distances = similarity[movie_index]
     elif model_type == "TF-IDF":
         distances = tfidf_similarity[movie_index]
-    
-    movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
-    recommended_movies = []
-    recommended_movies_posters = []
-    recommended_movie_trailers = []  # List to store trailer links
+    elif model_type == "KMeans":
+        movie_cluster = movies.iloc[movie_index]['cluster']
+        similar_movies = movies[movies['cluster'] == movie_cluster].sort_values('title')
+        for idx, row in similar_movies.iterrows():
+            if row['title'] != movie:
+                recommended_movies.append(row['title'])
+                recommended_movies_posters.append(fetch_poster(row['movie_id']))
+                recommended_movie_trailers.append(fetch_trailer(row['movie_id']))  # Fetch trailer link
+            if len(recommended_movies) >= 5:  # Limit to 5 recommendations
+                break
+        return recommended_movies, recommended_movies_posters, recommended_movie_trailers
 
+    # If using Content-Based or TF-IDF, sort by similarity score
+    movies_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:6]
     for i in movies_list:
         movie_id = movies.iloc[i[0]].movie_id
         recommended_movies.append(movies.iloc[i[0]].title)
@@ -73,7 +84,7 @@ selected_movie_name = st.selectbox(
 
 selected_model = st.selectbox(
     'Select Recommendation Model:',
-    ['Content-Based', 'TF-IDF']
+    ['Content-Based', 'TF-IDF', 'KMeans']  # Added KMeans to model options
 )
 
 # Display columns with posters and trailers
